@@ -1,0 +1,375 @@
+{% extends 'base.html' %}
+{% load i18n %}
+{% load set_var %}
+
+{% block title %}{% trans "CW Infrastructure" %}{% endblock %}
+
+{% block page_header %}
+  {% include "horizon/common/_page_header.html" with title=_("CW Infrastructure") %}
+
+<script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+
+{% endblock page_header %}
+
+{% block main %}
+<div id="loading_bar"></div>
+
+
+<table style="width:100%; table-layout:fixed; border-spacing: 0 25px; border-collapse: separate;">
+<tr>
+	<td width="25%" align="center"><div class="net_charts" id="vlan1"></div></td>
+	<td width="15%" align="center"><img src="{{ STATIC_URL }}dashboard/img/vlanx-blue.png" alt="Vlan 1"></td>
+	<td width="60%" align="center">
+		<table style="width:auto; table-layout:fixed; border-spacing: 0 10px; border-collapse: separate;">
+			<tr><td align="center"><div class="cpt_charts" id="nova-cpt1"></td></tr>
+			<tr><td align="center"><div class="cpt_charts" id="nova-cpt2"></td></tr>
+			<tr><td align="center"><div class="cpt_charts" id="nova-cpt3"></td></tr>
+		</table>
+	</td>
+</tr>
+
+<tr>
+        <td width="25%" align="center"><div class="net_charts" id="vlan2"></div></td>
+        <td width="15%" align="center"><img src="{{ STATIC_URL }}dashboard/img/vlanx-black.png" alt="Vlan 2"></td>
+	<td width="60%" align="center">
+                <table style="width:auto; table-layout:fixed; border-spacing: 0 10px; border-collapse: separate;">
+                        <tr><td align="center"><div class="cpt_charts" id="nova-cpt4"></td></tr>
+                        <tr><td align="center"><div class="cpt_charts" id="nova-cpt5"></td></tr>
+                        <tr><td align="center"><div class="cpt_charts" id="nova-cpt6"></td></tr>
+                </table>
+	</td>
+</tr>
+
+<tr>
+        <td width="25%" align="center"><div class="net_charts" id="vlan3"></div></td>
+        <td width="15%" align="center"><img src="{{ STATIC_URL }}dashboard/img/vlanx-red.png" alt="Vlan 3"></td>
+	<td width="60%" align="center">
+                <table style="width:auto; table-layout:fixed; border-spacing: 0 10px; border-collapse: separate;">
+                        <tr><td align="center"><div class="cpt_charts" id="nova-cpt7"></td></tr>
+                        <tr><td align="center"><div class="cpt_charts" id="nova-cpt8"></td></tr>
+                        <tr><td align="center"><div class="cpt_charts" id="nova-cpt9"></td></tr>
+                </table>
+	</td>
+</tr>
+</table>
+
+
+
+
+
+<script>
+
+	//SPINNER FUNCTIONS
+	//------------------------------------------------------------------------------
+
+	function start_spinner(){
+
+                var loader_pathfile = "{{ STATIC_URL }}dashboard/img/ajax-loader.gif";
+                //document.getElementById('loading_bar').style.visibility='visible';
+                document.getElementById('loading_bar').style.width='100%';
+                document.getElementById('loading_bar').style.height='100%';
+                document.getElementById('loading_bar').style.position='fixed';//'absolute';//'fixed';
+                document.getElementById('loading_bar').style.top='0';
+                document.getElementById('loading_bar').style.left='0';
+                document.getElementById('loading_bar').style.zIndex='9999';
+                document.getElementById('loading_bar').style.background="url('"+loader_pathfile+"') no-repeat center center rgba(0,0,0,0.25)";
+		//setTimeout(function(){document.getElementById('loading_bar').style.visibility='hidden';},3000);
+	}
+
+	//------------------------------------------------------------------------------
+
+
+	function initialize(){
+		drawHostCharts();
+		drawVlansCharts();
+	}
+
+        //MAIN PARAMETERS
+        //************************************
+	var refresh_interval = 20000;
+	var max_wait_interval = 15000; //How much time ajax call is waiting for an answer before removing the calling request!
+        //************************************
+
+        //Google Gauges variables and options
+        //-------------------------------------------------------
+        var data = []; var chart = []; host_options = [];
+        var net_data = []; var net_chart = []; net_options = [];
+
+	google.charts.load('current', {'packages':['gauge']});
+	google.charts.setOnLoadCallback(initialize);
+        //-------------------------------------------------------
+
+
+
+
+								//ITERATIVE FUNCTIONS
+	//-------------------------------------------------------------------------------------------------------------------------------------
+
+	function iterate_drawHostsCharts(){
+		$("#nova-cpt1").data("thread", null);
+		$("#nova-cpt1").data("thread",
+
+			setInterval( function(){
+				$.ajax({
+					type: 'GET',
+					url: "UpdateHostsGauges",
+					success : function(json) {
+
+						//Per each cptx update values in gauges
+						for(i=0;i<json.length;i++){
+							for(j=0; j<json[i].metrics.length;j++){
+								var metric_volume = json[i].metrics[j].counter_volume;
+
+								data[i][j].setValue(0, 0, metric_volume);
+								chart[i][j].draw(data[i][j], host_options[i][j]);
+							}
+						}
+					},
+					timeout: max_wait_interval,
+					error: function(json){alert('delay Hosts');}
+				})
+			}, refresh_interval)
+		);
+	}
+
+
+
+	function iterate_drawVlansCharts(){
+		$("#vlan1").data("thread", null);
+		$("#vlan1").data("thread",
+
+			setInterval( function(){
+				$.ajax({
+					type: 'GET',
+					url: "UpdateVlanGauges",
+					success : function(json) {
+
+						for(i=0;i<json.length;i++){
+							for(j=0;j<json[i].metrics.length;j++){
+								var metric_volume = json[i].metrics[j].counter_volume;
+
+								net_data[i][j].setValue(0,0, metric_volume);
+								net_chart[i][j].draw(net_data[i][j], net_options[i][j]);
+							}
+						}
+					},
+					timeout: max_wait_interval,
+					error: function(json){alert('delay VLANs');}
+				})
+			}, refresh_interval)
+		);
+	}
+	//-------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+
+							// New scenario
+        //-------------------------------------------------------------------------------------------------------------------------------------
+
+	function drawHostCharts() {
+		start_spinner();
+
+		var x = document.getElementsByClassName("cpt_charts");
+		for(i=0;i<x.length;i++) x[i].innerHTML= "";
+
+		var cpt_nodes = [];
+
+		$.ajax({
+			type: 'GET',
+			url: "UpdateHostsGauges",
+			success : function(json) {
+				//alert(JSON.stringify(json));
+				/*
+				[  
+					{  
+						"metrics":[  
+							{"counter_unit":"process", "counter_name":"cpu.load.1min", "range":"9", "metric_position":0, "counter_volume":3.18 },
+							{"counter_unit":"GB", "counter_name":"mem_used", "range":"86", "metric_position":1, "counter_volume":0 },
+							{"counter_unit":"ms", "counter_name":"max_jitter", "range":"50", "metric_position":2, "counter_volume":5.806 },
+							{"counter_unit":"%", "counter_name":"avg_packetloss", "range":"100", "metric_position":3, "counter_volume":0.0 },
+							{"counter_unit":"Mb/s", "counter_name":"outgoing.bytes", "range":"100", "metric_position":4, "counter_volume":0 }
+						],
+						"resource_id":"nova-cpt1"
+					},
+					{...}
+				]
+				*/
+				for(i=0;i<json.length;i++){
+					var cpt_title = json[i].resource_id;
+					var cpt_node = document.getElementById(json[i].resource_id);
+
+					//Some fancy fieldset
+					//---------------------------------------------------------------------------------------------------
+					var fieldset_legend_open ="<fieldset style='font-family: sans-serif; border: 5px solid #1F497D; border-radius: 5px; padding: 10px;'> \
+						<legend style='background: #1F497D; color: #fff; padding: 5px 10px ; font-size: 15px; border-radius: 5px; box-shadow: 0 0 0 5px #ddd; width:auto;'>"+json[i].resource_id+"</legend>";
+					var fieldset_legend_close="</legend></fieldset>";
+					//---------------------------------------------------------------------------------------------------
+
+
+					//Initialization of the gauges (even if they will not be updated because of lack of metric samples in mongo)
+					//--------------------------------------------------------------------------
+					var col = "";
+					var metric_name_cols ="";
+
+					data[i] = [];
+					chart[i] = [];
+					host_options[i] = [];
+
+					for(k=0;k<json[i].metrics.length;k++){
+						metric = json[i].metrics[k].counter_name;
+						unit = json[i].metrics[k].counter_unit;
+						max_volume = json[i].metrics[k].range;
+
+						metric_name_cols += "<td id='"+metric+i+" 'width='20%' align='center'>"+metric+" ("+unit+")</td>";
+
+						//Construct the table of the gauges
+						var node_id = "node"+i+metric;
+						if(k==0) col = "<td><div id='"+node_id+"' title='"+cpt_title+"' style='width: 120px; height: 120px; display:inline-block;'></div>";
+						else if(k==json[i].metrics.length-1){
+							col +="<div id='"+node_id+"' title='"+cpt_title+"' style='width: 120px; height: 120px; display:inline-block;'></div></td>";
+
+							var fieldset_and_gauges_start = fieldset_legend_open+"<table><tr>"+col+"</tr></table><table style='width: 600px;'><tr>";
+							cpt_node.innerHTML = fieldset_and_gauges_start + metric_name_cols +fieldset_legend_close;
+
+							for(j=0;j<json[i].metrics.length;j++){
+								data[i][j] = new google.visualization.DataTable();
+								data[i][j].addColumn('number');
+								data[i][j].addRow([json[i].metrics[j].counter_volume]);
+
+								host_options[i][j] = {
+									//width: 1000, height: 120,
+									yellowFrom: 0.75 * max_volume,
+									yellowTo: 0.9 * max_volume,
+									redFrom: 0.9 * max_volume, 
+									redTo: max_volume,
+									minorTicks: 5,
+									max: max_volume
+								};
+
+								chart[i][j] = new google.visualization.Gauge(document.getElementById("node"+i+json[i].metrics[j].counter_name));
+								chart[i][j].draw(data[i][j], host_options[i][j]);
+							}
+						}
+						else col += "<div id='"+node_id+"' title='"+cpt_title+"' style='width: 120px; height: 120px; display:inline-block;'></div>";
+					}
+					//--------------------------------------------------------------------------	
+				}
+				//Starting the function to retrieve periodically new data
+				document.getElementById('loading_bar').style.visibility='hidden';
+				iterate_drawHostsCharts();
+			}
+		});
+	}
+
+
+
+
+	function drawVlansCharts() {
+		start_spinner();
+
+		var x = document.getElementsByClassName("net_charts");
+		for(i=0;i<x.length;i++) x[i].innerHTML= "";
+
+		var net_nodes = [];
+
+		$.ajax({
+			type: 'GET',
+			url: "UpdateVlanGauges",
+			success : function(json) {
+
+				/*
+				[
+					{
+						'metrics': [
+							{'counter_unit': '%', 'counter_name': u'saturation', 'range': '100', 'metric_position': 0, 'counter_volume': 0.000501099483304231}, 
+							{'counter_unit': 'Mb/s', 'counter_name': u'bandwidth', 'range': '1000', 'metric_position': 1, 'counter_volume': 160.35183465735392}
+						], 
+						'resource_id': u'vlan_11.1.1.0/24'
+					}, 
+					{
+						'metrics': [
+							{'counter_unit': '%', 'counter_name': u'saturation', 'range': '100', 'metric_position': 0, 'counter_volume': 0.02791033723285476}, 
+							{'counter_unit': 'Mb/s', 'counter_name': u'bandwidth', 'range': '1000', 'metric_position': 1, 'counter_volume': 8931.307914513523}
+						], 
+						'resource_id': u'vlan_12.1.1.0/24'
+					}, 
+					{
+						'metrics': [
+							{'counter_unit': '%', 'counter_name': 'saturation', 'range': '100', 'metric_position': 0, 'counter_volume': 0}, 
+							{'counter_unit': 'Mb/s', 'counter_name': 'bandwidth', 'range': '1000', 'metric_position': 1, 'counter_volume': 0}
+						], 
+						'resource_id': 'vlan_13.1.1.0/24'
+					}
+				]
+				*/
+
+				//Initialization of the gauges (even if they will not be updated because of lack of samples for the metric in mongo)
+				//-------------------------------------------------------------------------------------------------------------------------------
+				for(i=0; i< json.length; i++){	
+					var col = "";
+					var metric_name_cols ="";
+
+					net_data[i] = [];
+					net_chart[i] = [];
+					net_options[i] = [];
+
+					//Some fancy fieldset
+					//---------------------------------------------------------------------------------------------------
+					var fieldset_legend_open ="<fieldset style='font-family: sans-serif; border: 5px solid #1F497D; border-radius: 5px; padding: 10px;'> \
+						<legend style='background: #1F497D; color: #fff; padding: 5px 10px ; font-size: 15px; border-radius: 5px; box-shadow: 0 0 0 5px #ddd; width:auto;'>"+json[i].resource_id+"</legend>";
+					var fieldset_legend_close="</legend></fieldset>";
+					//---------------------------------------------------------------------------------------------------
+
+
+					for(k=0;k<json[i].metrics.length;k++){
+						metric = json[i].metrics[k].counter_name;
+						unit = json[i].metrics[k].counter_unit;
+						resource_id = json[i].resource_id;
+
+						metric_name_cols += "<td id='"+metric+i+" 'width='50%' align='center'>"+metric+" ("+unit+")</td>";
+
+						var node = "net_node"+i+metric;
+
+						if(k==0) col = "<td><div id='net_node"+i+metric+"' title='"+resource_id+"' style='width: 120px; height: 120px; display:inline-block;'></div>";
+						else if(k==json[i].metrics.length-1) col +="<div id='net_node"+i+metric+"' title='"+resource_id+"' style='width: 120px; height: 120px; display:inline-block;'></div></td>";
+						else col += "<div id='net_node"+i+metric+"' title='"+resource_id+"' style='width: 120px; height: 120px; display:inline-block;'></div>";
+
+
+						if(k==json[i].metrics.length-1){
+							var fieldset_and_gauges_start = fieldset_legend_open+"<table><tr>"+col+"</tr></table><table style='width: 240px;'><tr>";
+							x[i].innerHTML = fieldset_and_gauges_start + metric_name_cols +fieldset_legend_close;
+
+							for(j=0;j<json[i].metrics.length;j++){
+								max = json[i].metrics[j].range;
+
+								net_data[i][j] = new google.visualization.DataTable();
+								net_data[i][j].addColumn('number');
+								net_data[i][j].addRow([json[i].metrics[j].counter_volume]);
+
+								net_options[i][j] = {
+									//width: 1000, height: 120,
+									yellowFrom: 0.75 * max,
+									yellowTo: 0.9 * max,
+									redFrom: 0.9 * max, 
+									redTo: max,
+									minorTicks: 5,
+									max: max
+								};
+
+								net_chart[i][j] = new google.visualization.Gauge(document.getElementById("net_node"+i+json[i].metrics[j].counter_name));
+								net_chart[i][j].draw(net_data[i][j], net_options[i][j]);
+							}
+						}
+					}
+					//-------------------------------------------------------------------------------------------------------------------------------
+				}
+				iterate_drawVlansCharts();
+			},
+			timeout: max_wait_interval,
+			error: function(json){alert('delay vlan'); drawVlansCharts();}
+		});
+	}
+        //-------------------------------------------------------------------------------------------------------------------------------------
+</script>
+{% endblock %}
