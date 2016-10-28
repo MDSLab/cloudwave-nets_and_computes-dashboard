@@ -11,7 +11,7 @@
 # under the License.
 
 import ConfigParser
-import json, os, subprocess
+import json, os, subprocess, requests
 from datetime import datetime, timedelta
 
 from django.http import HttpResponse   # noqa
@@ -45,32 +45,23 @@ demo_vms_list = [e.strip() for e in config.get('Demo_vms', 'demo_vms_list').spli
 
 
 #Admin token and delta_t initialization
-admin_token = ""
-delta_t = 40
+ENV_HEAT_OS_API_VERSION = "1"
+ENV_OS_AUTH_URL = "http://keystone:35357/v2.0"
+ENV_OS_USERNAME = "<username>"
+ENV_OS_TENANT_NAME = "<tenant_name>"
+ENV_OS_PASSWORD = "<password>"
+
+headers = {}
+delta_t = 60
+
 
 # For the hardware.network.outgoing.bytes.rate metric
-outgoing_bytes_resources = ""
+outgoing_bytes_resources = r'{\"=\":{\"resource_id\":\"nova-cpt1.eth3.11\"}}, {\"=\":{\"resource_id\":\"nova-cpt2.eth3.11\"}}, {\"=\":{\"resource_id\":\"nova-cpt3.eth3.11\"}}}'
 
 
 #************DEMO FLAG*******************
 flag_demo = True
 #****************************************
-
-
-
-class IndexView(views.APIView):
-    template_name = 'admin/infrastructurecw/index.html'
-
-    #Admin token section
-    global admin_token
-    os.system("curl -i \'http://keystone:5000/v2.0/tokens\' -X POST -H \"Content-Type: application/json\" -H \"Accept: application/json\"  -d \'{\"auth\": {\"tenantName\": \"admin\", \"passwordCredentials\": {\"username\": \"admin\", \"password\": \"<PASSWORD>\"}}}\' > /tmp/adm_token; sed \'1,8d\' /tmp/adm_token > /tmp/temp; cat /tmp/temp | jq \'.access.token.id\' > /tmp/adm_token")
-    admin_token = subprocess.check_output("sed -e \'s/\"//g\' /tmp/adm_token", shell=True).rstrip()
-
-    # For the hardware.network.outgoing.bytes.rate metric
-    global outgoing_bytes_resources
-    outgoing_bytes_resources = r'{\"=\":{\"resource_id\":\"nova-cpt1.eth3.11\"}}, {\"=\":{\"resource_id\":\"nova-cpt2.eth3.11\"}}, {\"=\":{\"resource_id\":\"nova-cpt3.eth3.11\"}}}'
-
-
 
 def change_label(metric_name):
     new_label = ""
@@ -109,6 +100,24 @@ def change_scale(metric_name, metric_volume):
 
     else:
         return metric_volume
+
+
+
+class IndexView(views.APIView):
+    template_name = 'admin/infrastructurecw/index.html'
+
+    #Admin token and headers section
+    global headers
+
+    keystone = ksclient.Client(
+        auth_url=ENV_OS_AUTH_URL,
+        username=ENV_OS_USERNAME,
+        password=ENV_OS_PASSWORD,
+        tenant_name= ENV_OS_TENANT_NAME
+    )
+
+    #Headers used to retrieve data from mongo using ceilometerclient
+    headers = {'User-Agent': 'ceilometerclient.openstack.common.apiclient',  'X-Auth-Token': keystone.auth_token, 'Content-Type': 'application/json'}
 
 
 
@@ -157,10 +166,7 @@ def UpdateVlanGauges(request):
 
         query = r'{"filter": "{\"and\":['+str(query_metrics)+r','+start+stop+r'{\"or\":['+str(query_resources)+r']}]}",'+str(orderby)+r','+str(limit)+'}'
 
-        vlan_file = open("/tmp/vlans_query.txt", "w")
-        vlan_file.write(query)
-        vlan_file.close()
-        result = subprocess.check_output("curl -X POST -H \'User-Agent: ceilometerclient.openstack.common.apiclient\' -H \'X-Auth-Token: "+str(admin_token)+"\' -H \'Content-Type: application/json\' --data @/tmp/vlans_query.txt http://ceilometer:8777/v2/query/samples", shell=True)#.rstrip()
+        result = requests.post('http://ceilometer:8777/v2/query/samples', headers=headers, data=query).text
         samples.append(json.loads(result))
         #LOG.debug('QUERY: %s', query)
     #LOG.debug('RESULT: %s', samples)
@@ -244,7 +250,6 @@ def UpdateVlanGauges(request):
 # HOSTS GAUGES Management
 # ------------------------------------------------------------------------------------------------------------------------
 def UpdateHostsGauges(request):
-    global admin_token, delta_t
 
     hosts = []
     query_resources = ""
@@ -291,10 +296,7 @@ def UpdateHostsGauges(request):
 
             query = r'{"filter": "{\"and\":['+str(query_metrics)+r','+start+stop+r'{\"or\":['+str(query_resources)+r']}]}",'+str(orderby)+r','+str(limit)+'}'
 
-            host_file = open("/tmp/hosts_query.txt", "w")
-            host_file.write(query)
-            host_file.close()
-            result = subprocess.check_output("curl -X POST -H \'User-Agent: ceilometerclient.openstack.common.apiclient\' -H \'X-Auth-Token: "+str(admin_token)+"\' -H \'Content-Type: application/json\' --data @/tmp/hosts_query.txt http://ceilometer:8777/v2/query/samples", shell=True)#.rstrip()
+            result = requests.post('http://ceilometer:8777/v2/query/samples', headers=headers, data=query).text
             samples.append(json.loads(result))
             LOG.debug('QUERY: %s', query)
 
@@ -342,12 +344,8 @@ def UpdateHostsGauges(request):
                 else:
                     query = r'{"filter": "{\"and\":['+str(query_metrics)+r','+start+stop+r'{\"or\":['+str(query_vms)+r']}]}",'+str(orderby)+r','+str(limit)+'}'
 
-                host_file = open("/tmp/hosts_query.txt", "w")
-                host_file.write(query)
-                host_file.close()
-                result = subprocess.check_output("curl -X POST -H \'User-Agent: ceilometerclient.openstack.common.apiclient\' -H \'X-Auth-Token: "+str(admin_token)+"\' -H \'Content-Type: application/json\' --data @/tmp/hosts_query.txt http://ceilometer:8777/v2/query/samples", shell=True)
-
-                result = json.loads(result)
+                output = requests.post('http://ceilometer:8777/v2/query/samples', headers=headers, data=query).text
+                result = json.loads(output)
                 LOG.debug('QUERY: %s', query)
                 #LOG.debug('LEN RES: %s', len(result))
 
